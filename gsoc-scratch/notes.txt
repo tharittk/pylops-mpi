@@ -1,0 +1,70 @@
+# May 9
+
+Refresh on SLURM. There is a confusion that we have to provision `salloc`
+for 3 tasks (MPI rank). But typically, we may call srun --ntasks=3 python script.py to allocate 3 ranks to that. But with Makefile that uses `mpiexec -n $NPROC`
+inside, I have to do srun --ntasks=1 make tests. The mpiexec will pick up the available resource (total rank = 3) by itself. If I do --ntasks=3, it will be 3 ranks each for each 3 instances.
+
+# May 10
+
+Gallery on Distributed Array has to be re-built with size > 1
+> Go see blockdiag and how CG is independently solved
+... in CUDA, __set_item__ should be able to automatically init in GPU (no copy from cpu to gpu)
+> Go see derivative op and how ghost cell communication is used
+> There is a method asmpilienaroperator() which is supposed to take Op from PyLops and turn that into MPILinearOp.
+But we also have MPIDC - as an example - which demonstrate that we will be able to just 
+wrap any op and have it becomes MPI. It needs specialization ! <- see docs, it is supposed to interface
+> Ensure the cupy is installed there. Otherwise reinstall
+
+# May 11
+> I found that NCCL has different API signature than MPI.COMM_WORLD
+There is no Get_rank() and Get_size() in NCCL. We may have to create
+an abstract class (COMM) that thinly wrap NCCL and MPI to provide common interface
+--- likely wrap NCCL (this will also help for allReduce etc. too) --- and let 
+distributed array take that class (this will break legacy code that explicitly puts MPI.COMM_WORLD)
+
+> Currently, the mpi4py (MPI.COMM particularly) is very flexible.
+For example, the allgather() may take any python object and return a list.
+This works when the object is Operator. In NCCL, we need to serialize it 
+and copy to GPU through the buffer first.
+Actually, the serialization is hard (recursive). Can we keep using MPI.COMM to
+send operator ? (but at the end of the day, it has to be copied to GPU) - HStack for example
+--> Seems like not that valid. We just need definition of Operator.
+Just make sure that matvec and rmatvec is working with GPU
+
+# May 12
+pylops.ToCupy() provide the way to infuse CPU->GPU copy in-out of array to the (chain of) operator.
+
+
+``` Formulate a plan
+**DistributedArray 
+base_comm now is type MPI.Comm. This must be changed to accomodated NCCL Comm. I propose to create
+the Comm interface. And thinly wrap MPI.Comm and NCCL.Comm so that it provides the same API to caller
+(likely same as MPI so we have minimal changes throughout) - see local_split(), NCCL does not have Get_rank().
+Comm interface should include the collective communcation as well. Currently, we have base_comm.allgather.
+But CuPy NCCL provides allGather
+[Study @property]
+There are private methods _allreduce and _allreduce_subcomm. These tightly intergrated with MPI.Op.
+There likely to be change to accommodate NCCL.
+
+# norm, vector_norm ?:545 dot explicitly use np.dot - should it be CuPy-compatible (the stacked 
+distributed array use ncp = get_module() but the _compute_vector_norm does not) - any way, the NCCL should be here
+along with MPI also
+
+ravel has to be cupy-compatible l:695 -- well, you are allow to call numpy function to cupy and the arr still cupy (in GPU)
+I think something like should be awared (_compute_vector_norm) np.min(cupy array) (TO CHECK) may copy to cpu and use numpy.min
+Some numpy function automatically dispatch to cupy-equivalent but some do not (like np.min)
+
+# add_ghost_cells: NCCL does not have tag semantic - current MPI code use tag. Double Check
+if the ghosted array stay in GPU -- likely as CuPy can call numpy function
+[Look at nccl-test repo and write test in PyLops-MPI for collective calls]
+[MIMIC - NCCL Test and use that to test PyLops-MPI DistributedArrays]
+
+**LinearOperator
+same issue like DistributedArray - base_comm
+
+-- Meeting: 
+communication - ask question over slack
+propose plan for implementation: should I write the github issue
+update / status check up
+How should I approach ? -> write the simple test case first for each Coll ?
+Discuss on the interface implementation
