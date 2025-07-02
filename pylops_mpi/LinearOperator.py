@@ -12,20 +12,27 @@ from pylops_mpi import DistributedArray
 
 
 class MPILinearOperator:
-    """Common interface for performing matrix-vector products in distributed fashion.
+    """MPI-enabled PyLops Linear Operator
 
-    This class provides methods to perform matrix-vector product and adjoint matrix-vector
-    products using MPI.
+    Common interface for performing matrix-vector products in distributed fashion.
 
-    .. note:: End users of pylops-mpi should not use this class directly but simply
-      use operators that are already implemented. This class is meant for
-      developers only, it has to be used as the parent class of any new operator
-      developed within pylops-mpi.
+    In practice, this class provides methods to perform matrix-vector and
+    adjoint matrix-vector products between any :obj:`pylops.LinearOperator`
+    (which must be the same across ranks) and a :class:`pylops_mpi.DistributedArray`
+    with ``Partition.BROADCAST`` and ``Partition.UNSAFE_BROADCAST`` partition. It
+    internally handles the extraction of the local array from the distributed array
+    and the creation of the output :class:`pylops_mpi.DistributedArray`.
+
+    Note that whilst this operator could also be used with different
+    :obj:`pylops.LinearOperator` across ranks, and with a
+    :class:`pylops_mpi.DistributedArray` with ``Partition.SCATTER``, it is however
+    reccomended to use the :class:`pylops_mpi.basicoperators.MPIBlockDiag` operator
+    instead as this can also handle distributed arrays with subcommunicators.
 
     Parameters
     ----------
     Op : :obj:`pylops.LinearOperator`, optional
-        Linear Operator. Defaults to ``None``.
+        PyLops Linear Operator to wrap. Defaults to ``None``.
     shape : :obj:`tuple(int, int)`, optional
         Shape of the MPI Linear Operator. Defaults to ``None``.
     dtype : :obj:`str`, optional
@@ -79,6 +86,7 @@ class MPILinearOperator:
         if self.Op:
             y = DistributedArray(global_shape=self.shape[0],
                                  base_comm=self.base_comm,
+                                 base_comm_nccl=x.base_comm_nccl,
                                  partition=x.partition,
                                  axis=x.axis,
                                  engine=x.engine,
@@ -116,6 +124,7 @@ class MPILinearOperator:
         if self.Op:
             y = DistributedArray(global_shape=self.shape[1],
                                  base_comm=self.base_comm,
+                                 base_comm_nccl=x.base_comm_nccl,
                                  partition=x.partition,
                                  axis=x.axis,
                                  engine=x.engine,
